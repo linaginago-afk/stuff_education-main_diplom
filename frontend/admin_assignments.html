@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Назначения · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Назначение тестов</div>
+      </div>
+      <div class="nav">
+        <a href="/admin_users.html">Сотрудники</a>
+        <a href="/admin_tests.html">Тесты</a>
+        <a href="/admin_assignments.html" class="active">Назначения</a>
+        <a href="/admin_results.html">Результаты</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="glass">
+      <div class="flex" style="justify-content: space-between; align-items: center;">
+        <div>
+          <h2 class="section-title" style="margin:0;">Выберите тест</h2>
+          <p class="muted">Отметьте сотрудников для назначения</p>
+        </div>
+        <div>
+          <select id="test-select"></select>
+        </div>
+      </div>
+
+      <table class="table" id="assign-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>ФИО</th>
+            <th>Логин</th>
+            <th>Роль</th>
+            <th>Подразделение</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="flex" style="margin-top:12px;">
+        <button class="btn primary" onclick="saveAssignments()">Сохранить</button>
+        <div id="message" class="muted"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let users = [];
+    let tests = [];
+
+    async function init() {
+      const me = await ensureAuthenticated();
+      if (!me) return;
+      if (me.role !== "admin") {
+        window.location.href = "/employee_tests.html";
+        return;
+      }
+      setUserBadge(me);
+      tests = await apiRequest("/admin/tests");
+      users = await apiRequest("/admin/users");
+      const select = document.getElementById("test-select");
+      select.innerHTML = "";
+      if (!tests.length) {
+        document.getElementById("message").textContent = "Создайте тест, чтобы назначить его сотрудникам.";
+        return;
+      }
+      tests.forEach((t) => {
+        const option = document.createElement("option");
+        option.value = t.id;
+        option.textContent = t.title;
+        select.appendChild(option);
+      });
+      select.addEventListener("change", loadAssignments);
+      loadAssignments();
+    }
+
+    async function loadAssignments() {
+      const testId = document.getElementById("test-select").value;
+      const current = await apiRequest(`/admin/tests/${testId}/assignees`);
+      const assignedIds = current.map((a) => a.user_id);
+      const tbody = document.querySelector("#assign-table tbody");
+      tbody.innerHTML = "";
+      users.forEach((u) => {
+        const tr = document.createElement("tr");
+        const checked = assignedIds.includes(u.id) ? "checked" : "";
+        tr.innerHTML = `
+          <td><input type="checkbox" data-user="${u.id}" ${checked}></td>
+          <td>${u.full_name}</td>
+          <td>${u.username}</td>
+          <td>${u.role}</td>
+          <td>${u.department || "—"}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function saveAssignments() {
+      const testId = document.getElementById("test-select").value;
+      const selected = Array.from(document.querySelectorAll("input[data-user]:checked")).map((el) =>
+        parseInt(el.getAttribute("data-user"), 10)
+      );
+      try {
+        await apiRequest(`/admin/tests/${testId}/assign`, { method: "POST", body: { user_ids: selected } });
+        showMessage("Назначения сохранены", "success");
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

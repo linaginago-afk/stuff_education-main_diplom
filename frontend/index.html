@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>АИС ПУОП Теремок · Вход</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>АИС ПУОП Теремок</div>
+      </div>
+      <div class="chip">MVP · FastAPI + MySQL</div>
+    </header>
+
+    <div class="glass two-col">
+      <div>
+        <h2 class="section-title">Вход в систему</h2>
+        <p class="muted">Используйте email и пароль, выданные администратором обучения.</p>
+        <form id="login-form">
+          <div>
+            <label class="muted">Email или логин</label>
+            <input type="text" name="username" required placeholder="employee@example.com">
+          </div>
+          <div>
+            <label class="muted">Пароль</label>
+            <input type="password" name="password" required placeholder="••••••">
+          </div>
+          <button class="btn primary" type="submit">Войти</button>
+          <div id="message" class="muted"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h3 class="section-title">Что внутри</h3>
+        <p class="muted">• Сотрудник: проходите назначенные тесты, смотрите попытки и прогресс.<br>
+          • Администратор: управляйте пользователями, тестами, назначениями и результатами.</p>
+        <p class="muted">Базовый администратор создается автоматически:<br>
+          <span class="code">login: admin</span> · <span class="code">password: admin</span></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showMessage("Проверяем...", "info");
+      const formData = new FormData(e.target);
+      try {
+        const res = await fetch("/api/auth/login", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("Неверный email или пароль");
+        const data = await res.json();
+        setToken(data.access_token);
+        const user = await apiRequest("/auth/me");
+        if (user.role === "admin") {
+          window.location.href = "/admin_users.html";
+        } else {
+          window.location.href = "/employee_tests.html";
+        }
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Прохождение теста · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Тест</div>
+      </div>
+      <div class="nav">
+        <a href="/employee_tests.html">Тесты</a>
+        <a href="/employee_progress.html">Мой прогресс</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="glass">
+      <h2 class="section-title" id="test-title">Загрузка...</h2>
+      <div class="muted" id="progress-text">0/0 вопросов</div>
+      <div class="progress" style="margin:8px 0 16px;">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div id="questions"></div>
+      <div class="flex" style="margin-top:16px;">
+        <button class="btn primary" id="submit-btn">Отправить</button>
+        <a class="btn" href="/employee_tests.html">Вернуться</a>
+        <div id="message" class="muted"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const testId = params.get("test");
+
+    async function loadTest() {
+      const user = await ensureAuthenticated();
+      if (!user) return;
+      if (user.role !== "employee") {
+        window.location.href = "/admin_users.html";
+        return;
+      }
+      setUserBadge(user);
+      try {
+        const test = await apiRequest(`/employee/tests/${testId}`);
+        document.getElementById("test-title").textContent = test.title;
+        const container = document.getElementById("questions");
+        container.innerHTML = "";
+        test.questions.forEach((q, idx) => {
+          const block = document.createElement("div");
+          block.className = "card";
+          const inputType = q.allows_multiple_answers ? "checkbox" : "radio";
+          const hint = q.allows_multiple_answers ? "Выберите все правильные варианты" : "Выберите один вариант";
+          block.innerHTML = `<div class="muted">Вопрос ${idx + 1} · ${hint}</div><h3>${q.text}</h3>`;
+          q.answer_options.forEach((opt) => {
+            const id = `q${q.id}-${opt.id}`;
+            const row = document.createElement("label");
+            row.className = "option-row";
+            row.innerHTML = `
+              <input type="${inputType}" name="question-${q.id}" value="${opt.id}" id="${id}">
+              <span>${opt.text}</span>
+            `;
+            block.appendChild(row);
+          });
+          container.appendChild(block);
+        });
+        updateProgress();
+        container.addEventListener("change", updateProgress);
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    document.getElementById("submit-btn").addEventListener("click", async () => {
+      const questionNames = Array.from(
+        new Set(Array.from(document.querySelectorAll("[name^='question-']")).map((input) => input.name))
+      );
+      const answers = questionNames
+        .map((name) => {
+          const selected = Array.from(document.querySelectorAll(`input[name='${name}']:checked`));
+          if (!selected.length) return null;
+          return {
+            question_id: parseInt(name.replace("question-", ""), 10),
+            answer_option_ids: selected.map((input) => parseInt(input.value, 10)),
+          };
+        })
+        .filter(Boolean);
+      showMessage("Отправляем...", "info");
+      try {
+        const result = await apiRequest(`/employee/tests/${testId}/submit`, {
+          method: "POST",
+          body: { answers },
+        });
+        showMessage(`Результат: ${result.score_percent}% · ${result.passed ? "Зачет" : "Незачет"}`, result.passed ? "success" : "danger");
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    });
+
+    function updateProgress() {
+      const allNames = Array.from(document.querySelectorAll("input[name^='question-']")).map((i) => i.name);
+      const total = new Set(allNames).size;
+      const answered = Array.from(new Set(Array.from(document.querySelectorAll("input[name^='question-']:checked")).map((i) => i.name))).length;
+      const pct = total ? Math.round((answered / total) * 100) : 0;
+      document.getElementById("progress-text").textContent = `${answered}/${total} вопросов`;
+      document.getElementById("progress-bar").style.width = `${pct}%`;
+    }
+
+    loadTest();
+  </script>
+</body>
+</html>

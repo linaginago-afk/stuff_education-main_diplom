@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мой прогресс · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Мой прогресс</div>
+      </div>
+      <div class="nav">
+        <a href="/employee_tests.html">Тесты</a>
+        <a href="/employee_progress.html" class="active">Прогресс</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="glass">
+      <h2 class="section-title">Сводка</h2>
+      <table class="table" id="progress-table">
+        <thead>
+          <tr>
+            <th>Тест</th>
+            <th>Лучшая оценка</th>
+            <th>Попыток</th>
+            <th>Последняя попытка</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="message" class="muted"></div>
+    </div>
+  </div>
+
+  <script>
+    async function loadProgress() {
+      const user = await ensureAuthenticated();
+      if (!user) return;
+      if (user.role !== "employee") {
+        window.location.href = "/admin_users.html";
+        return;
+      }
+      setUserBadge(user);
+      try {
+        const data = await apiRequest("/employee/progress");
+        const tbody = document.querySelector("#progress-table tbody");
+        tbody.innerHTML = "";
+        if (!data.length) {
+          tbody.innerHTML = `<tr><td colspan="4" class="muted">Нет данных</td></tr>`;
+          return;
+        }
+        data.forEach((row) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${row.test_title}</td>
+            <td>
+              ${row.best_score}% 
+              <div class="mini-bar"><div class="fill" style="width:${row.best_score}%;"></div></div>
+            </td>
+            <td>${row.attempts}</td>
+            <td>${row.last_attempt_date ? new Date(row.last_attempt_date).toLocaleString() : "—"}</td>`;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    loadProgress();
+  </script>
+</body>
+</html>

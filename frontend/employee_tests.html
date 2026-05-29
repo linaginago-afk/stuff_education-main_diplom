@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои тесты · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Мои тесты</div>
+      </div>
+      <div class="nav">
+        <a href="/employee_tests.html" class="active">Тесты</a>
+        <a href="/employee_progress.html">Мой прогресс</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+    <div class="glass">
+      <h2 class="section-title">Назначенные тесты</h2>
+      <div class="muted">Нажмите «Пройти», чтобы начать или повторить попытку.</div>
+      <table class="table" id="tests-table">
+        <thead>
+          <tr>
+            <th>Тест</th>
+            <th>Статус</th>
+            <th>Последний результат</th>
+            <th>Дата</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="message" class="muted"></div>
+    </div>
+  </div>
+
+  <script>
+    async function loadTests() {
+      const user = await ensureAuthenticated();
+      if (!user) return;
+      if (user.role !== "employee") {
+        window.location.href = "/admin_users.html";
+        return;
+      }
+      setUserBadge(user);
+      try {
+        const tests = await apiRequest("/employee/tests");
+        const tbody = document.querySelector("#tests-table tbody");
+        tbody.innerHTML = "";
+        if (!tests.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">Нет назначенных тестов</td></tr>`;
+          return;
+        }
+        tests.forEach((t) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${t.title}</td>
+            <td>${statusPill(t.status)}</td>
+            <td>${t.last_score !== null && t.last_score !== undefined ? t.last_score + "%" : "—"}</td>
+            <td>${t.last_attempt_date ? new Date(t.last_attempt_date).toLocaleString() : "—"}</td>
+            <td><button class="btn small secondary" onclick="goTest(${t.test_id})">Пройти</button></td>`;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    function goTest(id) {
+      window.location.href = `/employee_take.html?test=${id}`;
+    }
+
+    loadTests();
+  </script>
+</body>
+</html>

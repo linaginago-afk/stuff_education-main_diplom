@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Результаты · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Результаты</div>
+      </div>
+      <div class="nav">
+        <a href="/admin_users.html">Сотрудники</a>
+        <a href="/admin_tests.html">Тесты</a>
+        <a href="/admin_assignments.html">Назначения</a>
+        <a href="/admin_results.html" class="active">Результаты</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="glass">
+      <div class="flex" style="justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+          <h2 class="section-title" style="margin:0;">Сводка попыток</h2>
+          <p class="muted">Фильтр по тесту, статусу и произвольному набору сотрудников</p>
+        </div>
+        <div class="results-filters">
+          <div class="filter-field">
+            <label class="muted">Тест</label>
+            <select id="filter-test">
+              <option value="">Все тесты</option>
+            </select>
+          </div>
+          <div class="filter-field filter-field-wide">
+            <label class="muted">Сотрудники</label>
+            <select id="filter-users" class="multi-select" multiple size="5"></select>
+            <div class="muted">Не выбрано = все. Для выбора нескольких используйте Ctrl или Shift.</div>
+          </div>
+          <div class="filter-field">
+            <label class="muted">Статус</label>
+            <select id="filter-status">
+              <option value="">Все статусы</option>
+              <option value="passed">Зачет</option>
+              <option value="failed">Незачет</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <button class="btn primary" onclick="refresh()">Обновить</button>
+            <button class="btn" onclick="clearEmployeeFilter()">Сбросить сотрудников</button>
+            <button class="btn secondary" onclick="downloadCSV()">Экспорт CSV</button>
+          </div>
+        </div>
+      </div>
+
+      <table class="table" id="results-table">
+        <thead>
+          <tr>
+            <th>Сотрудник</th>
+            <th>Тест</th>
+            <th>Лучшая попытка</th>
+            <th>Попыток</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="flex" style="margin-top:8px;">
+        <button class="btn small" onclick="prevPage()">Назад</button>
+        <button class="btn small" onclick="nextPage()">Вперед</button>
+        <span class="muted" id="pager"></span>
+      </div>
+      <div id="message" class="muted"></div>
+    </div>
+
+    <div class="glass" style="margin-top:18px;">
+      <h3 class="section-title">Детали попыток</h3>
+      <div id="details" class="muted">Выберите «Детали», чтобы посмотреть историю пользователя.</div>
+      <div id="chart" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <script>
+    let users = [];
+    let tests = [];
+    let page = 1;
+    const limit = 10;
+    let lastLoaded = 0;
+
+    async function init() {
+      const me = await ensureAuthenticated();
+      if (!me) return;
+      if (me.role !== "admin") {
+        window.location.href = "/employee_tests.html";
+        return;
+      }
+      setUserBadge(me);
+      users = await apiRequest("/admin/users");
+      tests = await apiRequest("/admin/tests");
+      const testSelect = document.getElementById("filter-test");
+      const userSelect = document.getElementById("filter-users");
+      tests.forEach((t) => {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = t.title;
+        testSelect.appendChild(opt);
+      });
+      users.forEach((u) => {
+        const opt = document.createElement("option");
+        opt.value = u.id;
+        opt.textContent = `${u.full_name} · ${u.username}`;
+        userSelect.appendChild(opt);
+      });
+      refresh();
+    }
+
+    function selectedUserIds() {
+      return Array.from(document.getElementById("filter-users").selectedOptions).map((option) => option.value);
+    }
+
+    function appendFilters(params) {
+      const testId = document.getElementById("filter-test").value;
+      const status = document.getElementById("filter-status").value;
+      if (testId) params.push(`test_id=${encodeURIComponent(testId)}`);
+      selectedUserIds().forEach((userId) => params.push(`user_ids=${encodeURIComponent(userId)}`));
+      if (status) params.push(`status=${encodeURIComponent(status)}`);
+    }
+
+    function clearEmployeeFilter() {
+      Array.from(document.getElementById("filter-users").options).forEach((option) => {
+        option.selected = false;
+      });
+      refresh();
+    }
+
+    function refresh() {
+      page = 1;
+      loadResults();
+    }
+
+    async function loadResults() {
+      const params = [];
+      appendFilters(params);
+      params.push(`limit=${limit}`);
+      params.push(`offset=${(page - 1) * limit}`);
+      const query = params.length ? `?${params.join("&")}` : "";
+      try {
+        const data = await apiRequest(`/admin/results${query}`);
+        lastLoaded = data.length;
+        const tbody = document.querySelector("#results-table tbody");
+        tbody.innerHTML = "";
+        if (!data.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="muted">Нет данных</td></tr>`;
+          document.getElementById("pager").textContent = `Страница ${page}`;
+          return;
+        }
+        data.forEach((row) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${row.user_name}</td>
+            <td>${row.test_title}</td>
+            <td>${row.best_score}%</td>
+            <td>${row.attempts}</td>
+            <td>${statusPill(null, row.passed)}</td>
+            <td><button class="btn small" onclick="loadDetails(${row.user_id}, ${row.test_id})">Детали</button></td>`;
+          tbody.appendChild(tr);
+        });
+        document.getElementById("pager").textContent = `Страница ${page}`;
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    function testTitle(id) {
+      const t = tests.find((x) => x.id === id);
+      return t ? t.title : id;
+    }
+
+    async function loadDetails(userId, testId) {
+      const attempts = await apiRequest(`/admin/users/${userId}/attempts/details${testId ? `?test_id=${testId}` : ""}`);
+      if (!attempts.length) {
+        document.getElementById("details").textContent = "Нет попыток";
+        document.getElementById("chart").innerHTML = "";
+        return;
+      }
+      const details = attempts
+        .map((a) => {
+          const answers = a.answers.map((ans) => `${ans.is_correct ? "✅" : "❌"} ${ans.question_text} — ваш ответ: "${ans.selected_option_text}", верный: "${ans.correct_option_text}"`).join("<br>");
+          return `<div class="card" style="margin-bottom:8px;">
+            <div class="muted">#${a.id} · ${testTitle(a.test_id)} · ${new Date(a.finished_at).toLocaleString()}</div>
+            <div>Результат: ${a.score_percent}% · ${a.passed ? "зачет" : "незачет"}</div>
+            <div class="muted" style="margin-top:6px;">${answers}</div>
+          </div>`;
+        })
+        .join("");
+      document.getElementById("details").innerHTML = details;
+      renderChart(attempts);
+    }
+
+    function renderChart(attempts) {
+      const chart = document.getElementById("chart");
+      chart.innerHTML = `<div class="muted">Динамика попыток</div>
+        <div class="bars">
+          ${attempts
+            .map(
+              (a) =>
+                `<div class="bar" title="${a.score_percent}%" style="height:${(a.score_percent / 100) * 100}%"></div>`
+            )
+            .join("")}
+        </div>`;
+    }
+
+    async function downloadCSV() {
+      const params = [];
+      appendFilters(params);
+      const query = params.length ? `?${params.join("&")}` : "";
+      const res = await fetch(`/api/admin/results/export${query}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "results.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function nextPage() {
+      if (lastLoaded < limit) return;
+      page += 1;
+      loadResults();
+    }
+
+    function prevPage() {
+      if (page === 1) return;
+      page -= 1;
+      loadResults();
+    }
+
+    init();
+  </script>
+</body>
+</html>

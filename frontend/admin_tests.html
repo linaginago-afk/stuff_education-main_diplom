@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Тесты · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Тесты</div>
+      </div>
+      <div class="nav">
+        <a href="/admin_users.html">Сотрудники</a>
+        <a href="/admin_tests.html" class="active">Тесты</a>
+        <a href="/admin_assignments.html">Назначения</a>
+        <a href="/admin_results.html">Результаты</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="layout">
+      <div class="glass">
+        <h2 class="section-title">Создать тест</h2>
+        <form id="create-test-form">
+          <div class="grid">
+            <div>
+              <label class="muted">Название</label>
+              <input name="title" required>
+            </div>
+            <div>
+              <label class="muted">Описание</label>
+              <input name="description">
+            </div>
+          </div>
+          <button class="btn primary" type="submit">Создать</button>
+          <div id="message" class="muted"></div>
+        </form>
+      </div>
+
+      <div class="glass">
+        <h2 class="section-title">Добавить вопрос</h2>
+        <form id="question-form">
+          <div>
+            <label class="muted">Тест</label>
+            <select id="question-test" name="question-test" required></select>
+          </div>
+          <div>
+            <label class="muted">Текст вопроса</label>
+            <textarea name="qtext" rows="2" required></textarea>
+          </div>
+          <div class="grid answer-options">
+            <div class="answer-option">
+              <label class="muted">Вариант 1</label>
+              <input name="opt1" required>
+              <label class="correct-option">
+                <input type="checkbox" name="correct" value="1">
+                <span>Правильный ответ</span>
+              </label>
+            </div>
+            <div class="answer-option">
+              <label class="muted">Вариант 2</label>
+              <input name="opt2" required>
+              <label class="correct-option">
+                <input type="checkbox" name="correct" value="2">
+                <span>Правильный ответ</span>
+              </label>
+            </div>
+            <div class="answer-option">
+              <label class="muted">Вариант 3</label>
+              <input name="opt3">
+              <label class="correct-option">
+                <input type="checkbox" name="correct" value="3">
+                <span>Правильный ответ</span>
+              </label>
+            </div>
+            <div class="answer-option">
+              <label class="muted">Вариант 4</label>
+              <input name="opt4">
+              <label class="correct-option">
+                <input type="checkbox" name="correct" value="4">
+                <span>Правильный ответ</span>
+              </label>
+            </div>
+          </div>
+          <div class="muted">Отметьте один или несколько правильных вариантов.</div>
+          <button class="btn secondary" type="submit">Добавить вопрос</button>
+        </form>
+      </div>
+
+      <div class="glass">
+        <h2 class="section-title">Тесты</h2>
+        <table class="table" id="tests-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Название</th>
+              <th>Вопросов</th>
+              <th>Создан</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser;
+    async function guard() {
+      currentUser = await ensureAuthenticated();
+      if (!currentUser) return false;
+      if (currentUser.role !== "admin") {
+        window.location.href = "/employee_tests.html";
+        return false;
+      }
+      setUserBadge(currentUser);
+      return true;
+    }
+
+    async function loadTests() {
+      if (!(await guard())) return;
+      const tests = await apiRequest("/admin/tests");
+      const tbody = document.querySelector("#tests-table tbody");
+      const select = document.getElementById("question-test");
+      tbody.innerHTML = "";
+      select.innerHTML = "";
+      if (!tests.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="muted">Тестов пока нет</td></tr>`;
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Создайте тест";
+        select.appendChild(opt);
+        select.disabled = true;
+        return;
+      }
+      select.disabled = false;
+      tests.forEach((t, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${t.title}</td>
+          <td>${t.questions.length}</td>
+          <td>${new Date(t.created_at).toLocaleDateString()}</td>
+          <td><button class="btn small" onclick="deleteTest(${t.id})">Удалить</button></td>`;
+        tbody.appendChild(tr);
+
+        const option = document.createElement("option");
+        option.value = t.id;
+        option.textContent = t.title;
+        select.appendChild(option);
+      });
+    }
+
+    async function deleteTest(id) {
+      if (!confirm("Удалить тест?")) return;
+      try {
+        await apiRequest(`/admin/tests/${id}`, { method: "DELETE" });
+        loadTests();
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    document.getElementById("create-test-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      const payload = {
+        title: form.get("title"),
+        description: form.get("description"),
+      };
+      try {
+        await apiRequest("/admin/tests", { method: "POST", body: payload });
+        e.target.reset();
+        showMessage("Тест создан", "success");
+        loadTests();
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    });
+
+    document.getElementById("question-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      const correct = new Set(form.getAll("correct").map((value) => parseInt(value, 10)));
+      const opts = [1, 2, 3, 4]
+        .map((idx) => ({ text: form.get(`opt${idx}`)?.trim(), is_correct: correct.has(idx) }))
+        .filter((o) => o.text);
+      if (!opts.some((o) => o.is_correct)) {
+        showMessage("Отметьте хотя бы один правильный вариант", "danger");
+        return;
+      }
+      const payload = {
+        text: form.get("qtext"),
+        answer_options: opts,
+      };
+      try {
+        const testId = form.get("question-test");
+        await apiRequest(`/admin/tests/${testId}/questions`, { method: "POST", body: payload });
+        showMessage("Вопрос добавлен", "success");
+        e.target.reset();
+        loadTests();
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    });
+
+    loadTests();
+  </script>
+</body>
+</html>

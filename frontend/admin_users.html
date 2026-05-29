@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Сотрудники · Теремок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>Сотрудники</div>
+      </div>
+      <div class="nav">
+        <a href="/admin_users.html" class="active">Сотрудники</a>
+        <a href="/admin_tests.html">Тесты</a>
+        <a href="/admin_assignments.html">Назначения</a>
+        <a href="/admin_results.html">Результаты</a>
+        <button class="btn" onclick="logout()">Выход</button>
+      </div>
+    </header>
+    <div id="user-badge" class="muted" style="margin-bottom:8px;"></div>
+
+    <div class="layout">
+      <div class="glass">
+        <h2 class="section-title">Добавить сотрудника</h2>
+        <form id="create-form">
+          <div class="grid">
+            <div>
+              <label class="muted">ФИО</label>
+              <input name="full_name" required>
+            </div>
+            <div>
+              <label class="muted">Email</label>
+              <input type="email" name="username" required placeholder="employee@example.com">
+            </div>
+            <div>
+              <label class="muted">Пароль</label>
+              <input type="password" name="password" required>
+            </div>
+            <div>
+              <label class="muted">Роль</label>
+              <select name="role">
+                <option value="employee">employee</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div>
+              <label class="muted">Подразделение</label>
+              <input name="department">
+            </div>
+          </div>
+          <button class="btn primary" type="submit">Создать</button>
+          <div id="message" class="muted"></div>
+        </form>
+      </div>
+
+      <div class="glass">
+        <h2 class="section-title">Загрузить сотрудников из файла</h2>
+        <p class="muted">CSV или Excel (.xlsx) с колонками: ФИО, email, пароль, подразделение. Для каждой строки будет создана учетная запись сотрудника.</p>
+        <form id="import-form">
+          <input type="file" name="file" accept=".csv,.xlsx" required>
+          <button class="btn secondary" type="submit">Загрузить файл</button>
+          <div id="import-message" class="muted" style="white-space: pre-line;"></div>
+        </form>
+      </div>
+
+      <div class="glass">
+        <h2 class="section-title">Список</h2>
+        <table class="table" id="users-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ФИО</th>
+              <th>Email</th>
+              <th>Роль</th>
+              <th>Подразделение</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser;
+    async function loadUsers() {
+      currentUser = await ensureAuthenticated();
+      if (!currentUser) return;
+      if (currentUser.role !== "admin") {
+        window.location.href = "/employee_tests.html";
+        return;
+      }
+      setUserBadge(currentUser);
+      const data = await apiRequest("/admin/users");
+      const tbody = document.querySelector("#users-table tbody");
+      tbody.innerHTML = "";
+      data.forEach((u, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${u.full_name}</td>
+          <td>${u.username}</td>
+          <td>${u.role}</td>
+          <td>${u.department || "—"}</td>
+          <td><button class="btn small" onclick="deleteUser(${u.id})">Удалить</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function deleteUser(id) {
+      if (!confirm("Удалить пользователя?")) return;
+      try {
+        await apiRequest(`/admin/users/${id}`, { method: "DELETE" });
+        loadUsers();
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    }
+
+    document.getElementById("create-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      const payload = Object.fromEntries(form.entries());
+      try {
+        await apiRequest("/admin/users", { method: "POST", body: payload });
+        e.target.reset();
+        showMessage("Создано", "success");
+        loadUsers();
+      } catch (err) {
+        showMessage(err.message, "danger");
+      }
+    });
+
+    document.getElementById("import-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const message = document.getElementById("import-message");
+      const formData = new FormData(e.target);
+      message.textContent = "Загружаем файл...";
+      message.className = "muted info";
+      try {
+        const result = await apiRequest("/admin/users/import", { method: "POST", body: formData });
+        const errors = (result.errors || [])
+          .slice(0, 6)
+          .map((err) => `строка ${err.row}${err.email ? `, ${err.email}` : ""}: ${err.error}`)
+          .join("\n");
+        message.textContent = `Создано: ${result.created}. Пропущено: ${result.skipped}.${errors ? `\n${errors}` : ""}`;
+        message.className = result.skipped ? "muted danger" : "muted success";
+        e.target.reset();
+        loadUsers();
+      } catch (err) {
+        message.textContent = err.message;
+        message.className = "muted danger";
+      }
+    });
+
+    loadUsers();
+  </script>
+</body>
+</html>
